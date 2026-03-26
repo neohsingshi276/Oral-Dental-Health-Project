@@ -43,19 +43,22 @@ CREATE TABLE IF NOT EXISTS players (
 CREATE TABLE IF NOT EXISTS checkpoint_attempts (
   id INT AUTO_INCREMENT PRIMARY KEY,
   player_id INT NOT NULL,
+  session_id INT NOT NULL,
   checkpoint_number INT NOT NULL,
-  attempts INT DEFAULT 1,
+  attempts INT DEFAULT 0,
   completed BOOLEAN DEFAULT FALSE,
   completed_at TIMESTAMP NULL,
-  FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+  FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+  FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE
 );
 
 -- ── Player Positions ──────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS player_positions (
   id INT AUTO_INCREMENT PRIMARY KEY,
   player_id INT NOT NULL UNIQUE,
-  x FLOAT DEFAULT 390,
-  y FLOAT DEFAULT 1000,
+  pos_x FLOAT DEFAULT 390,
+  pos_y FLOAT DEFAULT 1000,
+  last_checkpoint INT DEFAULT 0,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
 );
@@ -75,16 +78,19 @@ CREATE TABLE IF NOT EXISTS learning_videos (
   title VARCHAR(255) NOT NULL,
   youtube_url VARCHAR(500) NOT NULL,
   description TEXT,
+  order_num INT DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ── Facts (Did You Know?) ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS facts (
   id INT AUTO_INCREMENT PRIMARY KEY,
+  created_by INT NOT NULL,
   title VARCHAR(255) NOT NULL,
   content TEXT NOT NULL,
   image_url VARCHAR(500) NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (created_by) REFERENCES admins(id) ON DELETE CASCADE
 );
 
 -- ── Chat Messages ─────────────────────────────────────────────
@@ -132,6 +138,8 @@ CREATE TABLE IF NOT EXISTS quiz_settings (
   timer_seconds INT DEFAULT 15,
   question_order ENUM('fixed', 'shuffle') DEFAULT 'shuffle',
   question_count INT DEFAULT 10,
+  minimum_correct INT DEFAULT 0,
+  selected_questions JSON NULL,
   FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE
 );
 
@@ -144,6 +152,39 @@ CREATE TABLE IF NOT EXISTS crossword_data (
   start_row INT NOT NULL,
   start_col INT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Crossword Settings ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS crossword_settings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  session_id INT NOT NULL UNIQUE,
+  word_count INT DEFAULT 8,
+  selected_words JSON NULL,
+  minimum_correct INT DEFAULT 0,
+  FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE
+);
+
+-- ── Crossword Scores ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS crossword_scores (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  player_id INT NOT NULL,
+  session_id INT NOT NULL,
+  score INT DEFAULT 0,
+  words_correct INT DEFAULT 0,
+  total_words INT DEFAULT 0,
+  time_taken INT DEFAULT 0,
+  completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+  FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE
+);
+
+-- ── CP3 Settings (Food Game) ──────────────────────────────────
+CREATE TABLE IF NOT EXISTS cp3_settings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  session_id INT NOT NULL UNIQUE,
+  timer_seconds INT DEFAULT 60,
+  target_score INT DEFAULT 0,
+  FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE
 );
 
 -- ── CP3 Scores (Food Game) ────────────────────────────────────
@@ -180,6 +221,14 @@ CREATE TABLE IF NOT EXISTS email_reminders (
   FOREIGN KEY (to_admin_id) REFERENCES admins(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS admin_invitations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(100) NOT NULL,
+  token VARCHAR(255) NOT NULL UNIQUE,
+  expires_at TIMESTAMP NOT NULL,
+  used BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 -- ============================================================
 -- SAMPLE DATA
 -- ============================================================
@@ -221,10 +270,10 @@ INSERT INTO learning_videos (title, youtube_url, description) VALUES
 ('Makanan Sihat Untuk Gigi', 'https://www.youtube.com/watch?v=O6jGPTtBUMU', 'Makanan yang baik dan buruk untuk kesihatan gigi');
 
 -- Sample Did You Know Facts
-INSERT INTO facts (title, content) VALUES
-('Gigi Adalah Unik!', 'Gigi anda adalah unik seperti cap jari anda. Tiada dua set gigi yang sama!'),
-('Enamel Adalah Bahan Paling Keras', 'Enamel gigi adalah bahan paling keras dalam badan manusia, lebih keras daripada tulang!'),
-('Bakteria Dalam Mulut', 'Terdapat lebih 700 jenis bakteria dalam mulut manusia. Memberus gigi membantu mengurangkan bakteria berbahaya.');
+INSERT INTO facts (created_by, title, content) VALUES
+(1, 'Gigi Adalah Unik!', 'Gigi anda adalah unik seperti cap jari anda. Tiada dua set gigi yang sama!'),
+(1, 'Enamel Adalah Bahan Paling Keras', 'Enamel gigi adalah bahan paling keras dalam badan manusia, lebih keras daripada tulang!'),
+(1, 'Bakteria Dalam Mulut', 'Terdapat lebih 700 jenis bakteria dalam mulut manusia. Memberus gigi membantu mengurangkan bakteria berbahaya.');
 
 SET FOREIGN_KEY_CHECKS = 1;
 SET SQL_SAFE_UPDATES = 1;
