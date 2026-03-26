@@ -9,6 +9,9 @@ import LearningPage from './pages/LearningPage';
 import DidYouKnowPage from './pages/DidYouKnowPage';
 import JoinGamePage from './pages/JoinGamePage';
 import GamePage from './pages/GamePage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import AdminRegisterPage from './pages/AdminRegisterPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 function App() {
   return (
@@ -26,9 +29,14 @@ function App() {
           {/* ── Admin Routes — hidden from students ── */}
           {/* Access via: /admin/login (not linked anywhere on student pages) */}
           <Route path="/admin/login" element={<AdminLoginPage />} />
+          <Route path="/admin/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/admin/dashboard" element={
             <ProtectedRoute><AdminDashboard /></ProtectedRoute>
           } />
+          <Route path="/admin/register" element={<AdminRegisterPage />} />
+
+          {/* ── Catch-all 404 ── */}
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

@@ -211,7 +211,7 @@ const styles = {
   factGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.2rem', marginTop: '1rem' },
   factCard: { padding: '1.5rem', borderRadius: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
   factIcon: { fontSize: '2.2rem', marginBottom: '0.75rem' },
-  factTitle: { fontSize: '1.05rem', fontWeight: '700', color: '#1e3a5f', marginBottom: '0.5rem' },
+  factTitle: { fontSize: '1.05rem', fontWeight: '700', color: '#1e3a5f', margin: '0 0 0.5rem' },
   factText: { color: '#64748b', fontSize: '0.9rem', lineHeight: 1.6, margin: 0 },
   stepsRow: { display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '1rem', marginTop: '1rem' },
   stepCard: { minWidth: '180px', flex: 1, background: '#f8fafc', border: '2px solid #e2e8f0', borderRadius: '16px', padding: '1.5rem', textAlign: 'center' },

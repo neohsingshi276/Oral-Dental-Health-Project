@@ -35,7 +35,6 @@ const DidYouKnowPage = () => {
       .then(res => {
         setFacts(res.data.facts);
         const timer = setTimeout(() => {
-          const vis = {};
           res.data.facts.forEach((f, i) => {
             setTimeout(() => setVisible(prev => ({ ...prev, [f.id]: true })), i * 120);
           });

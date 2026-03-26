@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 
-const TIMER_SECONDS = 300; // 5 minutes
-const PASS_PERCENT = 80;   // Need 80% to advance
+const DEFAULT_TIMER = 300;
+const DEFAULT_MIN_CORRECT = 0;
 
 const CrosswordGame = ({ onComplete, onRetry, playerId, sessionId }) => {
   const [words, setWords] = useState([]);
@@ -15,7 +15,7 @@ const CrosswordGame = ({ onComplete, onRetry, playerId, sessionId }) => {
   const [phase, setPhase] = useState('loading');
   const [showCongrats, setShowCongrats] = useState(false);
   const [checked, setChecked] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(TIMER_SECONDS);
+  const [timeLeft, setTimeLeft] = useState(DEFAULT_TIMER);
   const [isGameOver, setIsGameOver] = useState(false);
   const [revealAll, setRevealAll] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -25,20 +25,29 @@ const CrosswordGame = ({ onComplete, onRetry, playerId, sessionId }) => {
   const timerRef = useRef(null);
   const [showLB, setShowLB] = useState(false);
   const [lbData, setLbData] = useState([]);
+  const [settings, setSettings] = useState({ minimum_correct: DEFAULT_MIN_CORRECT });
+  const [timerTotal, setTimerTotal] = useState(DEFAULT_TIMER);
 
-  // Load crossword data
+  // Load crossword data using session_id
   useEffect(() => {
-    api.get('/crossword')
+    const endpoint = sessionId ? `/crossword/${sessionId}` : '/crossword';
+    api.get(endpoint)
       .then(res => {
         const w = res.data.words;
         const gs = res.data.gridSize || 10;
+        const cfg = res.data.settings || {};
         setWords(w);
         setGridSize(gs);
+        setSettings(cfg);
+        // Use admin timer if set, else default
+        const timer = cfg.timer_seconds || DEFAULT_TIMER;
+        setTimerTotal(timer);
+        setTimeLeft(timer);
         buildGrid(w, gs);
         setPhase('playing');
       })
       .catch(() => setPhase('error'));
-  }, []);
+  }, [sessionId]);
 
   // Timer
   useEffect(() => {
@@ -57,7 +66,7 @@ const CrosswordGame = ({ onComplete, onRetry, playerId, sessionId }) => {
   }, [phase, isGameOver, showCongrats]);
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
-  const timerPct = (timeLeft / TIMER_SECONDS) * 100;
+  const timerPct = (timeLeft / timerTotal) * 100;
   const timerColor = timeLeft > 120 ? '#16a34a' : timeLeft > 60 ? '#f59e0b' : '#e11d48';
 
   const buildGrid = (words, gs) => {
@@ -133,7 +142,7 @@ const CrosswordGame = ({ onComplete, onRetry, playerId, sessionId }) => {
         session_id: sessionId,
         words_correct: wordsCorrect,
         total_words: words.length,
-        time_taken: TIMER_SECONDS - timeLeft
+        time_taken: timerTotal - timeLeft
       });
       setScoreSubmitted(true);
       fetchLeaderboard();
@@ -163,8 +172,8 @@ const CrosswordGame = ({ onComplete, onRetry, playerId, sessionId }) => {
 
   useEffect(() => {
     if (isGameOver && !showCongrats && !scoreSubmitted) {
-      const pct = words.length > 0 ? (completed.length / words.length) * 100 : 0;
-      if (pct >= PASS_PERCENT) {
+      const minCorrect = settings.minimum_correct || DEFAULT_MIN_CORRECT;
+      if (minCorrect > 0 ? completed.length >= minCorrect : true) {
         submitScore(completed.length);
       }
     }
@@ -330,9 +339,8 @@ const CrosswordGame = ({ onComplete, onRetry, playerId, sessionId }) => {
             {!showLB ? (
               <button style={s.doneBtn} onClick={async () => {
                 try {
-                  const res = await fetch(`http://localhost:5000/api/cp3/crossword-leaderboard/${sessionId}`);
-                  const data = await res.json();
-                  setLbData(data.leaderboard || []);
+                  const res = await api.get(`/cp3/crossword-leaderboard/${sessionId}`);
+                  setLbData(res.data.leaderboard || []);
                 } catch (err) { console.error(err); }
                 setShowLB(true);
               }}>Lihat Papan Markah 🏆</button>
@@ -357,9 +365,8 @@ const CrosswordGame = ({ onComplete, onRetry, playerId, sessionId }) => {
 
       {/* Time's up overlay */}
       {isGameOver && !showCongrats && (() => {
-        const pct = words.length > 0 ? Math.round((completed.length / words.length) * 100) : 0;
-        const passed = pct >= PASS_PERCENT;
-        const needed = Math.ceil(words.length * PASS_PERCENT / 100);
+        const minCorrect = settings.minimum_correct || DEFAULT_MIN_CORRECT;
+        const passed = minCorrect > 0 ? completed.length >= minCorrect : true;
         return (
           <div style={s.overlay}>
             <div style={s.congratsCard}>
@@ -372,7 +379,7 @@ const CrosswordGame = ({ onComplete, onRetry, playerId, sessionId }) => {
               </p>
               {!passed && (
                 <p style={{ color: '#94a3b8', margin: '0 0 0.5rem', fontSize: '0.88rem' }}>
-                  Kamu perlu selesaikan sekurang-kurangnya <strong>{needed} perkataan</strong> ({PASS_PERCENT}%) untuk lulus.
+                  Kamu perlu selesaikan sekurang-kurangnya <strong>{minCorrect} perkataan</strong> untuk lulus.
                 </p>
               )}
               {showLeaderboard && leaderboard.length > 0 && passed && (

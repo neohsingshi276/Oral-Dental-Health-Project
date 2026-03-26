@@ -21,7 +21,7 @@ const Analytics = () => {
 
   const downloadCSV = () => {
     const token = localStorage.getItem('token');
-    window.open(`http://localhost:5000/api/admin/download-csv?token=${token}`);
+    window.open(`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/api/admin/download-csv?token=${token}`);
   };
 
   if (loading) return <div style={{ color: '#94a3b8', padding: '2rem', textAlign: 'center' }}>Loading analytics... 📊</div>;

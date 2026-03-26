@@ -15,10 +15,24 @@ const Navbar = () => {
 };
 
 const styles = {
-  nav: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 2rem', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', position: 'sticky', top: 0, zIndex: 100 },
-  logo: { fontSize: '1.4rem', fontWeight: '700', color: '#1e3a5f', textDecoration: 'none' },
-  links: { display: 'flex', alignItems: 'center', gap: '1.5rem' },
-  link: { color: '#475569', textDecoration: 'none', fontWeight: '500', fontSize: '0.95rem' },
+  nav: { 
+    display: 'flex', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    padding: '1rem 2rem', 
+    background: 'rgba(255, 255, 255, 0.8)', 
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.05)', 
+    position: 'sticky', 
+    top: 0, 
+    zIndex: 100,
+    borderBottom: '1px solid rgba(255,255,255,0.3)',
+    fontFamily: '"Outfit", sans-serif'
+  },
+  logo: { fontSize: '1.5rem', fontWeight: '800', color: '#0f172a', textDecoration: 'none', letterSpacing: '-0.03em' },
+  links: { display: 'flex', alignItems: 'center', gap: '2rem' },
+  link: { color: '#475569', textDecoration: 'none', fontWeight: '600', fontSize: '1rem', transition: 'color 0.2s ease' },
 };
 
 export default Navbar;

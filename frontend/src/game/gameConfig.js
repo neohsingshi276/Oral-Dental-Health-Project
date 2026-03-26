@@ -10,8 +10,6 @@ export const CHECKPOINTS = [
   { id: 3, x: 290, y: 300, radius: 40, color: '#E85D04', label: 'Checkpoint 3' },
 ];
 
-export const BLOOKET_URL = 'https://play.blooket.com/play?hwId=69af90e21a24308d533c3ea0';
-export const SCRATCH_URL = 'https://scratch.mit.edu/projects/1163553448/fullscreen/';
 
 // YouTube Video IDs only (not full URLs)
 export const CHECKPOINT_VIDEO_IDS = {

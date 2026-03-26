@@ -1,9 +1,57 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import mapBase from '../assets/map-base.jpg';
 import { MAP_WIDTH, MAP_HEIGHT, CHAR_SIZE, CHAR_SPEED, START_POS, CHECKPOINTS } from './gameConfig';
+import collisionData from '../assets/collision-grid.json';
 import api from '../services/api';
 
 const SAVE_INTERVAL = 5000;
+
+// Build collision lookup: converts pixel position to tile and checks walkability
+const COLLISION_GRID = collisionData.grid;
+const GRID_W = collisionData.width;   // 350 tiles
+const GRID_H = collisionData.height;  // 475 tiles
+
+// Scale factors: map pixel coords -> tile coords
+const TILE_SCALE_X = GRID_W / MAP_WIDTH;   // tiles per pixel
+const TILE_SCALE_Y = GRID_H / MAP_HEIGHT;
+
+/**
+ * Check if a pixel position is walkable.
+ * Checks the character's bounding box corners (shrunk by a few px for smoother movement).
+ */
+const isWalkable = (px, py) => {
+  // Always allow near checkpoints and start position (ensures accessibility)
+  const nearSpecial = [START_POS, ...CHECKPOINTS].some(loc => {
+    const lx = loc.x, ly = loc.y;
+    const r = loc.radius || 30;
+    return Math.abs(px - lx) < r + 10 && Math.abs(py - ly) < r + 10;
+  });
+  if (nearSpecial) return true;
+
+  // Check a few points around the character's feet area
+  const margin = 4; // pixels of forgiveness
+  const halfW = 8;  // half character width for collision
+  const feetY = py + 8; // feet are below center
+
+  const points = [
+    [px, feetY],                    // center bottom
+    [px - halfW + margin, feetY],   // left foot
+    [px + halfW - margin, feetY],   // right foot
+    [px, feetY - 6],                // slightly above feet
+  ];
+
+  for (const [x, y] of points) {
+    const tileX = Math.floor(x * TILE_SCALE_X);
+    const tileY = Math.floor(y * TILE_SCALE_Y);
+
+    // Out of bounds = blocked
+    if (tileX < 0 || tileX >= GRID_W || tileY < 0 || tileY >= GRID_H) return false;
+
+    const row = COLLISION_GRID[tileY];
+    if (!row || row[tileX] !== '1') return false;
+  }
+  return true;
+};
 
 const GameCanvas = ({ player, progress, onCheckpointReached }) => {
   const canvasRef = useRef(null);
@@ -219,8 +267,24 @@ const GameCanvas = ({ player, progress, onCheckpointReached }) => {
       // Diagonal speed normalization
       if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; }
 
-      pos.x = Math.max(CHAR_SIZE, Math.min(MAP_WIDTH - CHAR_SIZE, pos.x + dx));
-      pos.y = Math.max(CHAR_SIZE, Math.min(MAP_HEIGHT - CHAR_SIZE, pos.y + dy));
+      // Collision-checked movement: try X and Y separately for wall sliding
+      const newX = Math.max(CHAR_SIZE, Math.min(MAP_WIDTH - CHAR_SIZE, pos.x + dx));
+      const newY = Math.max(CHAR_SIZE, Math.min(MAP_HEIGHT - CHAR_SIZE, pos.y + dy));
+
+      // Try moving on both axes
+      if (isWalkable(newX, newY)) {
+        pos.x = newX;
+        pos.y = newY;
+      }
+      // Try X only (slide along horizontal wall)
+      else if (dx !== 0 && isWalkable(newX, pos.y)) {
+        pos.x = newX;
+      }
+      // Try Y only (slide along vertical wall)
+      else if (dy !== 0 && isWalkable(pos.x, newY)) {
+        pos.y = newY;
+      }
+      // Blocked on all sides — don't move
 
       // Check near checkpoint
       let near = null;
@@ -258,26 +322,27 @@ const GameCanvas = ({ player, progress, onCheckpointReached }) => {
     return () => cancelAnimationFrame(animRef.current);
   }, [player, progress, nearCheckpoint, onCheckpointReached, savePosition, getCompletedCPs, isCheckpointUnlocked]);
 
-  // Camera: follow character
-  const getCamera = () => {
-    const viewW = Math.min(800, window.innerWidth - 40);
-    const viewH = Math.min(600, window.innerHeight - 200);
-    return { viewW, viewH };
-  };
+  // Camera: follow character via CSS transform
+  const viewW = Math.min(800, typeof window !== 'undefined' ? window.innerWidth - 40 : 800);
+  const viewH = Math.min(600, typeof window !== 'undefined' ? window.innerHeight - 200 : 600);
+  const [cameraOffset, setCameraOffset] = useState({ x: 0, y: 0 });
 
-  const { viewW, viewH } = getCamera();
-
-  // Scroll canvas to follow character
+  // Update camera offset in game loop
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const parent = canvas.parentElement;
-    if (!parent) return;
-    const scrollX = charPos.current.x - viewW / 2;
-    const scrollY = charPos.current.y - viewH / 2;
-    parent.scrollLeft = Math.max(0, Math.min(MAP_WIDTH - viewW, scrollX));
-    parent.scrollTop = Math.max(0, Math.min(MAP_HEIGHT - viewH, scrollY));
-  });
+    const updateCamera = () => {
+      const targetX = Math.max(0, Math.min(MAP_WIDTH - viewW, charPos.current.x - viewW / 2));
+      const targetY = Math.max(0, Math.min(MAP_HEIGHT - viewH, charPos.current.y - viewH / 2));
+      setCameraOffset(prev => {
+        // Smooth camera lerp
+        const newX = prev.x + (targetX - prev.x) * 0.15;
+        const newY = prev.y + (targetY - prev.y) * 0.15;
+        if (Math.abs(newX - prev.x) < 0.5 && Math.abs(newY - prev.y) < 0.5) return prev;
+        return { x: newX, y: newY };
+      });
+    };
+    const interval = setInterval(updateCamera, 16);
+    return () => clearInterval(interval);
+  }, [viewW, viewH]);
 
   return (
     <div style={{ width: `${viewW}px`, height: `${viewH}px`, overflow: 'hidden', borderRadius: '12px', border: '3px solid #1e3a5f', position: 'relative' }}>
@@ -285,7 +350,12 @@ const GameCanvas = ({ player, progress, onCheckpointReached }) => {
         ref={canvasRef}
         width={MAP_WIDTH}
         height={MAP_HEIGHT}
-        style={{ display: 'block', imageRendering: 'pixelated' }}
+        style={{
+          display: 'block',
+          imageRendering: 'pixelated',
+          transform: `translate(${-cameraOffset.x}px, ${-cameraOffset.y}px)`,
+          willChange: 'transform',
+        }}
         tabIndex={0}
       />
     </div>

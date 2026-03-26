@@ -20,9 +20,10 @@ const GamePage = () => {
   const [chatInput, setChatInput] = useState('');
   const [allDone, setAllDone] = useState(false);
   const [quizKey, setQuizKey] = useState(0);
+  const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem('tutorial_seen'));
 
   useEffect(() => {
-    const saved = sessionStorage.getItem('player');
+    const saved = localStorage.getItem('player');
     if (!saved) { navigate(`/join/${token}`); return; }
     const p = JSON.parse(saved);
     setPlayer(p);
@@ -122,6 +123,42 @@ const GamePage = () => {
         <GameCanvas player={player} progress={progress} onCheckpointReached={handleCheckpointReached} />
       </div>
 
+      {/* Tutorial Overlay */}
+      {showTutorial && (
+        <div style={s.overlay}>
+          <div style={{ ...s.doneCard, maxWidth: '500px' }}>
+            <div style={{ fontSize: '4rem', marginBottom: '0.5rem' }}>🗺️</div>
+            <h2 style={{ ...s.doneTitle, fontSize: '1.5rem' }}>Welcome to Dental Quest!</h2>
+            <div style={{ textAlign: 'left', margin: '1.5rem 0', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: '#eff6ff', padding: '1rem', borderRadius: '12px' }}>
+                <span style={{ fontSize: '2rem' }}>🕹️</span>
+                <div>
+                  <strong style={{ color: '#1e3a5f' }}>Move your character</strong>
+                  <p style={{ margin: '0.25rem 0 0', color: '#64748b', fontSize: '0.9rem' }}>Use <strong>W A S D</strong> or <strong>Arrow Keys</strong></p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: '#f0fdf4', padding: '1rem', borderRadius: '12px' }}>
+                <span style={{ fontSize: '2rem' }}>🎯</span>
+                <div>
+                  <strong style={{ color: '#1e3a5f' }}>Enter checkpoints</strong>
+                  <p style={{ margin: '0.25rem 0 0', color: '#64748b', fontSize: '0.9rem' }}>Walk to a glowing circle and press <strong>E</strong></p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: '#fff7ed', padding: '1rem', borderRadius: '12px' }}>
+                <span style={{ fontSize: '2rem' }}>📋</span>
+                <div>
+                  <strong style={{ color: '#1e3a5f' }}>Complete all 3 checkpoints</strong>
+                  <p style={{ margin: '0.25rem 0 0', color: '#64748b', fontSize: '0.9rem' }}>Watch video → Do activity → Move to next!</p>
+                </div>
+              </div>
+            </div>
+            <button style={{ ...s.continueBtn, background: '#2563eb' }} onClick={() => { setShowTutorial(false); localStorage.setItem('tutorial_seen', '1'); }}>
+              🚀 Let's Go!
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* All Done Screen */}
       {allDone && (
         <div style={s.overlay}>
@@ -131,7 +168,7 @@ const GamePage = () => {
             <p style={s.doneText}>You completed all 3 checkpoints!</p>
             <p style={s.doneText}>You are a Dental Quest Champion! 🦷⭐</p>
             <button style={{ ...s.continueBtn, background: '#16a34a', marginTop: '1.5rem' }}
-              onClick={() => { sessionStorage.removeItem('player'); navigate('/'); }}>
+              onClick={() => { localStorage.removeItem('player'); navigate('/'); }}>
               🏠 Back to Home
             </button>
           </div>
@@ -194,7 +231,7 @@ const GamePage = () => {
 
             {/* Step 2: Activity — only CP2 crossword here */}
             {cpStep === 'activity' && activeCP === 2 && (
-              <CrosswordGame onComplete={handleActivityDone} />
+              <CrosswordGame onComplete={handleActivityDone} playerId={player.id} sessionId={player.session_id} />
             )}
 
             {/* Step 3: Done */}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
 
 const QuizGame = ({ player, onQuizComplete, onRetry }) => {
   const [phase, setPhase] = useState('loading');
@@ -190,7 +190,7 @@ const QuizGame = ({ player, onQuizComplete, onRetry }) => {
           {leaderboard.length === 0 && <p style={{ color: '#94a3b8', textAlign: 'center', padding: '1rem' }}>Tiada markah lagi</p>}
         </div>
       </div>
-      {result.correct >= 8 ? (
+      {result.correct >= (settings.minimum_correct || 0) ? (
         <button style={s.doneBtn} onClick={onQuizComplete}>
           Teruskan Pengembaraan! 🗺️
         </button>
@@ -202,7 +202,7 @@ const QuizGame = ({ player, onQuizComplete, onRetry }) => {
               Belum Lulus!
             </h3>
             <p style={{ color: '#64748b', margin: '0 0 1rem', fontSize: '0.95rem' }}>
-              Kamu perlu betulkan sekurang-kurangnya <strong>8 soalan</strong> untuk lulus.
+              Kamu perlu betulkan sekurang-kurangnya <strong>{settings.minimum_correct || 0} soalan</strong> untuk lulus.
               Kamu betulkan <strong>{result.correct}/{result.total}</strong>.
             </p>
             <button style={s.retryBtn} onClick={onRetry}>

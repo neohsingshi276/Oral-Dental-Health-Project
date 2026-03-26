@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import api from '../services/api';
 
-const GAME_DURATION = 60;
+const DEFAULT_DURATION = 60;
 const TROLLEY_SPEED = 4;
 const TROLLEY_ACCELERATION = 0.3;
 const FOOD_FALL_SPEED = 2.5;
 const SPAWN_INTERVAL = 1200;
-const API_BASE = 'http://localhost:5000/api';
 
 const GOOD_FOODS = [
   { emoji: '🥛', name: 'Milk', points: 10, color: '#FFE5B4' },
@@ -28,7 +28,7 @@ const BAD_FOODS = [
 const CP3Game = ({ player, onComplete }) => {
   const [gameState, setGameState] = useState('start');
   const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
+  const [timeLeft, setTimeLeft] = useState(DEFAULT_DURATION);
   const [trolleyPos, setTrolleyPos] = useState(50);
   const [fallingItems, setFallingItems] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -38,6 +38,8 @@ const CP3Game = ({ player, onComplete }) => {
   const [particles, setParticles] = useState([]);
   const [combo, setCombo] = useState(0);
   const [finalScore, setFinalScore] = useState(0);
+  const [gameDuration, setGameDuration] = useState(DEFAULT_DURATION);
+  const [targetScore, setTargetScore] = useState(0);
 
   const gameAreaRef = useRef(null);
   const keysPressed = useRef({});
@@ -50,11 +52,24 @@ const CP3Game = ({ player, onComplete }) => {
   // Keep scoreRef in sync
   useEffect(() => { scoreRef.current = score; }, [score]);
 
+  // Fetch admin settings on mount
+  useEffect(() => {
+    if (!player) return;
+    api.get(`/cp3/settings/${player.session_id}`)
+      .then(res => {
+        const s = res.data.settings || {};
+        if (s.timer_seconds) setGameDuration(s.timer_seconds);
+        if (s.target_score) setTargetScore(s.target_score);
+        setTimeLeft(s.timer_seconds || DEFAULT_DURATION);
+      })
+      .catch(() => {});
+  }, [player]);
+
   const startGame = () => {
     setGameState('playing');
     setScore(0);
     scoreRef.current = 0;
-    setTimeLeft(GAME_DURATION);
+    setTimeLeft(gameDuration);
     setTrolleyPos(50);
     setFallingItems([]);
     setParticles([]);
@@ -188,14 +203,9 @@ const CP3Game = ({ player, onComplete }) => {
   const handleGameEnd = async (fs) => {
     if (!player) return;
     try {
-      await fetch(`${API_BASE}/cp3/score`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player_id: player.id, session_id: player.session_id, score: fs }),
-      });
-      const lb = await fetch(`${API_BASE}/cp3/leaderboard/${player.session_id}`);
-      const lbData = await lb.json();
-      setLeaderboard(lbData.leaderboard || []);
+      await api.post('/cp3/score', { player_id: player.id, session_id: player.session_id, score: fs });
+      const lb = await api.get(`/cp3/leaderboard/${player.session_id}`);
+      setLeaderboard(lb.data.leaderboard || []);
       setShowLeaderboard(true);
     } catch (err) { console.error(err); setShowLeaderboard(true); }
   };
@@ -203,9 +213,8 @@ const CP3Game = ({ player, onComplete }) => {
   const handleShowFinal = async () => {
     setShowLeaderboard(false);
     try {
-      const res = await fetch(`${API_BASE}/cp3/final/${player.session_id}`);
-      const data = await res.json();
-      setFinalLeaderboard(data.leaderboard || []);
+      const res = await api.get(`/cp3/final/${player.session_id}`);
+      setFinalLeaderboard(res.data.leaderboard || []);
     } catch (err) { console.error(err); }
     setShowFinalLeaderboard(true);
   };
@@ -219,16 +228,16 @@ const CP3Game = ({ player, onComplete }) => {
         <div style={s.badge}>Checkpoint 3</div>
         <div style={s.instrGrid}>
           <div style={s.instrCard}>⌨️<br /><strong>Arrow Keys</strong><br />to move</div>
-          <div style={s.instrCard}>⏱️<br /><strong>60 seconds</strong><br />of fun!</div>
+          <div style={s.instrCard}>⏱️<br /><strong>{gameDuration} seconds</strong><br />of fun!</div>
         </div>
         <div style={s.foodCols}>
           <div style={s.goodCol}>
             <div style={s.colTitle}>✅ Catch These! (+10)</div>
-            <div style={s.foodRow}>{GOOD_FOODS.map((f,i) => <div key={i} style={s.foodChip}>{f.emoji}</div>)}</div>
+            <div style={s.foodRow}>{GOOD_FOODS.map((f, i) => <div key={i} style={s.foodChip}>{f.emoji}</div>)}</div>
           </div>
           <div style={s.badCol}>
             <div style={s.colTitle}>❌ Avoid These! (-5)</div>
-            <div style={s.foodRow}>{BAD_FOODS.map((f,i) => <div key={i} style={s.foodChip}>{f.emoji}</div>)}</div>
+            <div style={s.foodRow}>{BAD_FOODS.map((f, i) => <div key={i} style={s.foodChip}>{f.emoji}</div>)}</div>
           </div>
         </div>
         <button style={s.startBtn} onClick={startGame}>🎮 START GAME!</button>
@@ -241,25 +250,25 @@ const CP3Game = ({ player, onComplete }) => {
     <div style={s.fullPage}>
       <style>{animStyles}</style>
       <div style={s.lbCard}>
-        <div style={{fontSize:'4rem', textAlign:'center'}}>🏆</div>
+        <div style={{ fontSize: '4rem', textAlign: 'center' }}>🏆</div>
         <h2 style={s.lbTitle}>Papan Markah Akhir!</h2>
-        <p style={{textAlign:'center', color:'#64748b', marginBottom:'0.5rem', fontSize:'0.88rem'}}>CP1 Quiz + CP2 Crossword + CP3 Food Game (masing-masing 33%)</p>
-        <div style={{background:'#f8fafc', borderRadius:'10px', padding:'0.75rem', marginBottom:'1rem', fontSize:'0.78rem', color:'#475569', textAlign:'center'}}>
+        <p style={{ textAlign: 'center', color: '#64748b', marginBottom: '0.5rem', fontSize: '0.88rem' }}>CP1 Quiz + CP2 Crossword + CP3 Food Game (masing-masing 33%)</p>
+        <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '0.75rem', marginBottom: '1rem', fontSize: '0.78rem', color: '#475569', textAlign: 'center' }}>
           Formula: (Skor CP / Skor Max) × 33 = Markah
         </div>
         <div style={s.lbList}>
           {finalLeaderboard.map((entry, i) => (
-            <div key={entry.player_id} style={{...s.lbRow, ...(entry.player_id === player?.id ? s.lbRowMe : {}), background: i===0?'#fef9ee':i===1?'#f8fafc':i===2?'#fff7ed':'#fff'}}>
-              <div style={s.lbRank}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`}</div>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:'700', color:'#1e3a5f', marginBottom:'0.25rem'}}>{entry.nickname}{entry.player_id===player?.id&&<span style={s.youBadge}>Anda</span>}</div>
-                <div style={{fontSize:'0.72rem', color:'#64748b', display:'flex', gap:'0.75rem'}}>
+            <div key={entry.player_id} style={{ ...s.lbRow, ...(entry.player_id === player?.id ? s.lbRowMe : {}), background: i === 0 ? '#fef9ee' : i === 1 ? '#f8fafc' : i === 2 ? '#fff7ed' : '#fff' }}>
+              <div style={s.lbRank}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: '700', color: '#1e3a5f', marginBottom: '0.25rem' }}>{entry.nickname}{entry.player_id === player?.id && <span style={s.youBadge}>Anda</span>}</div>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', display: 'flex', gap: '0.75rem' }}>
                   <span>CP1: {entry.cp1_mark}/33</span>
                   <span>CP2: {entry.cp2_mark}/33</span>
                   <span>CP3: {entry.cp3_mark}/33</span>
                 </div>
               </div>
-              <div style={{...s.lbScore, fontSize:'1.2rem'}}>{entry.total_mark}<span style={{fontSize:'0.75rem', color:'#94a3b8'}}>/99</span></div>
+              <div style={{ ...s.lbScore, fontSize: '1.2rem' }}>{entry.total_mark}<span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>/99</span></div>
             </div>
           ))}
         </div>
@@ -273,21 +282,21 @@ const CP3Game = ({ player, onComplete }) => {
     <div style={s.fullPage}>
       <style>{animStyles}</style>
       <div style={s.lbCard}>
-        <div style={{fontSize:'4rem', textAlign:'center'}}>🎯</div>
+        <div style={{ fontSize: '4rem', textAlign: 'center' }}>🎯</div>
         <h2 style={s.lbTitle}>Food Catcher Stars!</h2>
         <div style={s.yourScore}>
-          <div style={{color:'#fff', fontSize:'0.9rem', marginBottom:'0.25rem'}}>Skor Kamu</div>
-          <div style={{color:'#FFD700', fontSize:'3.5rem', fontWeight:'900'}}>{finalScore}</div>
+          <div style={{ color: '#fff', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Skor Kamu</div>
+          <div style={{ color: '#FFD700', fontSize: '3.5rem', fontWeight: '900' }}>{finalScore}</div>
         </div>
         <div style={s.lbList}>
           {leaderboard.map((entry, i) => (
-            <div key={entry.player_id} style={{...s.lbRow, ...(entry.player_id === player?.id ? s.lbRowMe : {})}}>
-              <div style={s.lbRank}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`}</div>
-              <div style={{flex:1, fontWeight:'600', color:'#1e3a5f'}}>{entry.nickname}{entry.player_id===player?.id&&<span style={s.youBadge}>Anda</span>}</div>
+            <div key={entry.player_id} style={{ ...s.lbRow, ...(entry.player_id === player?.id ? s.lbRowMe : {}) }}>
+              <div style={s.lbRank}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</div>
+              <div style={{ flex: 1, fontWeight: '600', color: '#1e3a5f' }}>{entry.nickname}{entry.player_id === player?.id && <span style={s.youBadge}>Anda</span>}</div>
               <div style={s.lbScore}>{entry.score} pts</div>
             </div>
           ))}
-          {leaderboard.length === 0 && <p style={{textAlign:'center', color:'#94a3b8', padding:'1rem'}}>Tiada markah lagi</p>}
+          {leaderboard.length === 0 && <p style={{ textAlign: 'center', color: '#94a3b8', padding: '1rem' }}>Tiada markah lagi</p>}
         </div>
         <button style={s.nextBtn} onClick={handleShowFinal}>Lihat Papan Markah Akhir 🏆</button>
       </div>
@@ -301,13 +310,13 @@ const CP3Game = ({ player, onComplete }) => {
       <div style={s.gameWrap}>
         <div style={s.gameHeader}>
           <div style={s.scorePanel}>
-            <span style={{fontSize:'0.85rem', color:'#666'}}>Skor</span>
+            <span style={{ fontSize: '0.85rem', color: '#666' }}>Skor</span>
             <span style={s.scoreVal}>{score}</span>
             {combo > 1 && <span style={s.combo}>🔥 {combo}x!</span>}
           </div>
           <div style={s.timerPanel}>
-            <span style={{...s.timerVal, color: timeLeft <= 10 ? '#e11d48' : '#4ECDC4'}}>{timeLeft}</span>
-            <span style={{fontSize:'0.75rem', color:'#666'}}>saat</span>
+            <span style={{ ...s.timerVal, color: timeLeft <= 10 ? '#e11d48' : '#4ECDC4' }}>{timeLeft}</span>
+            <span style={{ fontSize: '0.75rem', color: '#666' }}>saat</span>
           </div>
         </div>
 
@@ -315,25 +324,25 @@ const CP3Game = ({ player, onComplete }) => {
           <div style={s.shelf} />
           <div style={s.shelf2} />
           {particles.map(p => (
-            <div key={p.id} style={{...s.particle, left:`${p.x}%`, top:`${p.y}px`, backgroundColor:p.color, opacity:p.life}} />
+            <div key={p.id} style={{ ...s.particle, left: `${p.x}%`, top: `${p.y}px`, backgroundColor: p.color, opacity: p.life }} />
           ))}
           {fallingItems.map(item => (
-            <div key={item.id} style={{...s.fallingItem, left:`${item.x}%`, top:`${item.y}px`}}>
-              <div style={{...s.foodBubble, background:item.color+'40'}}>
-                <span style={{fontSize:'2.5rem'}}>{item.emoji}</span>
-                <span style={{fontSize:'0.7rem', fontWeight:'700', color: item.points > 0 ? '#16a34a' : '#e11d48'}}>{item.points > 0 ? `+${item.points}` : item.points}</span>
+            <div key={item.id} style={{ ...s.fallingItem, left: `${item.x}%`, top: `${item.y}px` }}>
+              <div style={{ ...s.foodBubble, background: item.color + '40' }}>
+                <span style={{ fontSize: '2.5rem' }}>{item.emoji}</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: item.points > 0 ? '#16a34a' : '#e11d48' }}>{item.points > 0 ? `+${item.points}` : item.points}</span>
               </div>
             </div>
           ))}
-          <div style={{...s.trolley, left:`${trolleyPos}%`}}>
-            <span style={{fontSize:'5rem'}}>🛒</span>
+          <div style={{ ...s.trolley, left: `${trolleyPos}%` }}>
+            <span style={{ fontSize: '5rem' }}>🛒</span>
           </div>
         </div>
 
         <div style={s.controlsHint}>
           <span style={s.keyBtn}>←</span>
           <span style={s.keyBtn}>→</span>
-          <span style={{fontSize:'0.88rem', fontWeight:'600', color:'#475569'}}>Gerakkan troli!</span>
+          <span style={{ fontSize: '0.88rem', fontWeight: '600', color: '#475569' }}>Gerakkan troli!</span>
         </div>
       </div>
     </div>
@@ -347,46 +356,46 @@ const animStyles = `
 `;
 
 const s = {
-  fullPage: { position:'fixed', inset:0, background:'linear-gradient(180deg, #87CEEB 0%, #E0F6FF 100%)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'sans-serif', padding:'1rem', overflowY:'auto' },
-  startCard: { background:'#fff', borderRadius:'24px', padding:'2rem', maxWidth:'700px', width:'100%', boxShadow:'0 20px 60px rgba(0,0,0,0.15)', textAlign:'center' },
-  title: { fontSize:'2.5rem', fontWeight:'900', color:'#FF6B35', margin:'0 0 0.5rem', textShadow:'3px 3px 0 #FFE66D' },
-  badge: { display:'inline-block', background:'linear-gradient(135deg,#FF6B35,#F7931E)', color:'#fff', padding:'0.4rem 1.5rem', borderRadius:'50px', fontSize:'0.9rem', fontWeight:'700', marginBottom:'1.5rem' },
-  instrGrid: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem', marginBottom:'1.5rem' },
-  instrCard: { background:'#fff9e6', border:'3px solid #FFD93D', borderRadius:'16px', padding:'1rem', fontSize:'0.9rem', lineHeight:1.6 },
-  foodCols: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem', marginBottom:'1.5rem', textAlign:'left' },
-  goodCol: { background:'#f0fdf4', borderRadius:'12px', padding:'1rem', border:'2px solid #86efac' },
-  badCol: { background:'#fff1f2', borderRadius:'12px', padding:'1rem', border:'2px solid #fca5a5' },
-  colTitle: { fontWeight:'700', fontSize:'0.85rem', marginBottom:'0.75rem', color:'#1e293b' },
-  foodRow: { display:'flex', flexWrap:'wrap', gap:'0.5rem' },
-  foodChip: { fontSize:'1.8rem' },
-  startBtn: { width:'100%', padding:'1rem', fontSize:'1.3rem', fontWeight:'900', background:'linear-gradient(135deg,#FF6B35,#F7931E)', color:'#fff', border:'none', borderRadius:'16px', cursor:'pointer', boxShadow:'0 8px 25px rgba(255,107,53,0.4)' },
-  gameWrap: { width:'100%', maxWidth:'900px' },
-  gameHeader: { display:'flex', gap:'1rem', marginBottom:'0.75rem' },
-  scorePanel: { flex:1, background:'#fff', padding:'0.75rem 1.5rem', borderRadius:'16px', display:'flex', alignItems:'center', gap:'1rem', border:'3px solid #FFD93D' },
-  scoreVal: { fontSize:'2.5rem', fontWeight:'900', color:'#FF6B35' },
-  combo: { fontSize:'1rem', fontWeight:'800', color:'#FF6B35', animation:'pulse 0.5s infinite' },
-  timerPanel: { background:'#fff', padding:'0.75rem 1.5rem', borderRadius:'16px', textAlign:'center', border:'3px solid #4ECDC4', minWidth:'90px' },
-  timerVal: { fontSize:'2.5rem', fontWeight:'900', display:'block' },
-  gameArea: { position:'relative', height:'500px', background:'linear-gradient(180deg,#FFF9E6 0%,#FFE66D 100%)', borderRadius:'20px', overflow:'hidden', border:'4px solid #fff', boxShadow:'0 10px 40px rgba(0,0,0,0.15)' },
-  shelf: { position:'absolute', top:'25%', left:0, right:0, height:'10px', background:'#8B6F47', opacity:0.3 },
-  shelf2: { position:'absolute', top:'55%', left:0, right:0, height:'10px', background:'#8B6F47', opacity:0.3 },
-  particle: { position:'absolute', width:'8px', height:'8px', borderRadius:'50%', pointerEvents:'none' },
-  fallingItem: { position:'absolute', transform:'translateX(-50%)', pointerEvents:'none' },
-  foodBubble: { width:'60px', height:'60px', borderRadius:'50%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', border:'2px solid #fff', boxShadow:'0 4px 12px rgba(0,0,0,0.15)' },
-  trolley: { position:'absolute', bottom:'20px', transform:'translateX(-50%)', willChange:'transform' },
-  controlsHint: { display:'flex', alignItems:'center', justifyContent:'center', gap:'0.75rem', marginTop:'0.75rem', background:'#fff', padding:'0.75rem 2rem', borderRadius:'50px', boxShadow:'0 4px 15px rgba(0,0,0,0.1)', border:'2px solid #FFE66D' },
-  keyBtn: { display:'inline-flex', alignItems:'center', justifyContent:'center', width:'36px', height:'36px', background:'linear-gradient(135deg,#4ECDC4,#44A08D)', color:'#fff', borderRadius:'8px', fontWeight:'800', fontSize:'1rem' },
-  lbCard: { background:'#fff', borderRadius:'24px', padding:'2rem', maxWidth:'600px', width:'100%', boxShadow:'0 20px 60px rgba(0,0,0,0.15)', maxHeight:'90vh', overflowY:'auto' },
-  lbTitle: { fontSize:'1.8rem', fontWeight:'900', textAlign:'center', color:'#FF6B35', margin:'0.5rem 0 1rem', textShadow:'2px 2px 0 #FFE66D' },
-  yourScore: { background:'linear-gradient(135deg,#1e3a5f,#2563eb)', borderRadius:'16px', padding:'1.25rem', textAlign:'center', marginBottom:'1.5rem' },
-  lbList: { display:'flex', flexDirection:'column', gap:'0.5rem', marginBottom:'1.5rem' },
-  lbRow: { display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', borderRadius:'12px', border:'1px solid #f1f5f9' },
-  lbRowMe: { border:'2px solid #2563eb', background:'#eff6ff' },
-  lbRank: { width:'36px', textAlign:'center', fontSize:'1.1rem', flexShrink:0 },
-  lbScore: { fontWeight:'800', color:'#2563eb', fontSize:'1rem' },
-  youBadge: { background:'#2563eb', color:'#fff', fontSize:'0.65rem', padding:'0.1rem 0.4rem', borderRadius:'6px', fontWeight:'700', marginLeft:'0.4rem' },
-  nextBtn: { width:'100%', padding:'0.85rem', background:'linear-gradient(135deg,#4ECDC4,#44A08D)', color:'#fff', border:'none', borderRadius:'12px', fontSize:'1rem', fontWeight:'700', cursor:'pointer' },
-  doneBtn: { width:'100%', padding:'0.85rem', background:'linear-gradient(135deg,#16a34a,#15803d)', color:'#fff', border:'none', borderRadius:'12px', fontSize:'1rem', fontWeight:'700', cursor:'pointer' },
+  fullPage: { position: 'fixed', inset: 0, background: 'linear-gradient(180deg, #87CEEB 0%, #E0F6FF 100%)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', padding: '1rem', overflowY: 'auto' },
+  startCard: { background: '#fff', borderRadius: '24px', padding: '2rem', maxWidth: '700px', width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.15)', textAlign: 'center' },
+  title: { fontSize: '2.5rem', fontWeight: '900', color: '#FF6B35', margin: '0 0 0.5rem', textShadow: '3px 3px 0 #FFE66D' },
+  badge: { display: 'inline-block', background: 'linear-gradient(135deg,#FF6B35,#F7931E)', color: '#fff', padding: '0.4rem 1.5rem', borderRadius: '50px', fontSize: '0.9rem', fontWeight: '700', marginBottom: '1.5rem' },
+  instrGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' },
+  instrCard: { background: '#fff9e6', border: '3px solid #FFD93D', borderRadius: '16px', padding: '1rem', fontSize: '0.9rem', lineHeight: 1.6 },
+  foodCols: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem', textAlign: 'left' },
+  goodCol: { background: '#f0fdf4', borderRadius: '12px', padding: '1rem', border: '2px solid #86efac' },
+  badCol: { background: '#fff1f2', borderRadius: '12px', padding: '1rem', border: '2px solid #fca5a5' },
+  colTitle: { fontWeight: '700', fontSize: '0.85rem', marginBottom: '0.75rem', color: '#1e293b' },
+  foodRow: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem' },
+  foodChip: { fontSize: '1.8rem' },
+  startBtn: { width: '100%', padding: '1rem', fontSize: '1.3rem', fontWeight: '900', background: 'linear-gradient(135deg,#FF6B35,#F7931E)', color: '#fff', border: 'none', borderRadius: '16px', cursor: 'pointer', boxShadow: '0 8px 25px rgba(255,107,53,0.4)' },
+  gameWrap: { width: '100%', maxWidth: '900px' },
+  gameHeader: { display: 'flex', gap: '1rem', marginBottom: '0.75rem' },
+  scorePanel: { flex: 1, background: '#fff', padding: '0.75rem 1.5rem', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '1rem', border: '3px solid #FFD93D' },
+  scoreVal: { fontSize: '2.5rem', fontWeight: '900', color: '#FF6B35' },
+  combo: { fontSize: '1rem', fontWeight: '800', color: '#FF6B35', animation: 'pulse 0.5s infinite' },
+  timerPanel: { background: '#fff', padding: '0.75rem 1.5rem', borderRadius: '16px', textAlign: 'center', border: '3px solid #4ECDC4', minWidth: '90px' },
+  timerVal: { fontSize: '2.5rem', fontWeight: '900', display: 'block' },
+  gameArea: { position: 'relative', height: '500px', background: 'linear-gradient(180deg,#FFF9E6 0%,#FFE66D 100%)', borderRadius: '20px', overflow: 'hidden', border: '4px solid #fff', boxShadow: '0 10px 40px rgba(0,0,0,0.15)' },
+  shelf: { position: 'absolute', top: '25%', left: 0, right: 0, height: '10px', background: '#8B6F47', opacity: 0.3 },
+  shelf2: { position: 'absolute', top: '55%', left: 0, right: 0, height: '10px', background: '#8B6F47', opacity: 0.3 },
+  particle: { position: 'absolute', width: '8px', height: '8px', borderRadius: '50%', pointerEvents: 'none' },
+  fallingItem: { position: 'absolute', transform: 'translateX(-50%)', pointerEvents: 'none' },
+  foodBubble: { width: '60px', height: '60px', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' },
+  trolley: { position: 'absolute', bottom: '20px', transform: 'translateX(-50%)', willChange: 'transform' },
+  controlsHint: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', marginTop: '0.75rem', background: '#fff', padding: '0.75rem 2rem', borderRadius: '50px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', border: '2px solid #FFE66D' },
+  keyBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', background: 'linear-gradient(135deg,#4ECDC4,#44A08D)', color: '#fff', borderRadius: '8px', fontWeight: '800', fontSize: '1rem' },
+  lbCard: { background: '#fff', borderRadius: '24px', padding: '2rem', maxWidth: '600px', width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.15)', maxHeight: '90vh', overflowY: 'auto' },
+  lbTitle: { fontSize: '1.8rem', fontWeight: '900', textAlign: 'center', color: '#FF6B35', margin: '0.5rem 0 1rem', textShadow: '2px 2px 0 #FFE66D' },
+  yourScore: { background: 'linear-gradient(135deg,#1e3a5f,#2563eb)', borderRadius: '16px', padding: '1.25rem', textAlign: 'center', marginBottom: '1.5rem' },
+  lbList: { display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.5rem' },
+  lbRow: { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: '12px', border: '1px solid #f1f5f9' },
+  lbRowMe: { border: '2px solid #2563eb', background: '#eff6ff' },
+  lbRank: { width: '36px', textAlign: 'center', fontSize: '1.1rem', flexShrink: 0 },
+  lbScore: { fontWeight: '800', color: '#2563eb', fontSize: '1rem' },
+  youBadge: { background: '#2563eb', color: '#fff', fontSize: '0.65rem', padding: '0.1rem 0.4rem', borderRadius: '6px', fontWeight: '700', marginLeft: '0.4rem' },
+  nextBtn: { width: '100%', padding: '0.85rem', background: 'linear-gradient(135deg,#4ECDC4,#44A08D)', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '1rem', fontWeight: '700', cursor: 'pointer' },
+  doneBtn: { width: '100%', padding: '0.85rem', background: 'linear-gradient(135deg,#16a34a,#15803d)', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '1rem', fontWeight: '700', cursor: 'pointer' },
 };
 
 export default CP3Game;
