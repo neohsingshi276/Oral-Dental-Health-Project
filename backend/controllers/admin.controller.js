@@ -1,6 +1,10 @@
 const db = require('../db');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const { logActivity } = require('./activity.controller');
+const { sendInviteEmail, sendReminderEmail } = require('../services/email.service');
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const getPlayers = async (req, res) => {
   try {
@@ -21,7 +25,6 @@ const getPlayers = async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 };
 
-// Download player data as CSV
 const downloadCSV = async (req, res) => {
   try {
     const [rows] = await db.query(`
@@ -42,10 +45,8 @@ const downloadCSV = async (req, res) => {
       LEFT JOIN cp3_scores cp3 ON cp3.player_id = p.id
       GROUP BY p.id ORDER BY s.session_name, p.nickname
     `);
-
     const headers = ['Nickname','Session','Joined At','CP1 Completed','CP1 Attempts','CP2 Completed','CP2 Attempts','CP3 Completed','CP3 Attempts','Quiz Score','Quiz Correct','Food Game Score'];
     const csvRows = [headers.join(',')];
-
     rows.forEach(r => {
       csvRows.push([
         r.nickname, r.session_name,
@@ -56,11 +57,9 @@ const downloadCSV = async (req, res) => {
         r.quiz_score || 0, r.quiz_correct || 0, r.cp3_score || 0
       ].join(','));
     });
-
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename=player_data.csv');
     res.send(csvRows.join('\n'));
-
     await logActivity(req.admin.id, 'Downloaded player data CSV');
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 };
@@ -91,24 +90,106 @@ const getAnalytics = async (req, res) => {
 const getAllAdmins = async (req, res) => {
   try {
     const [rows] = await db.query('SELECT id, name, email, role, created_at FROM admins ORDER BY role DESC, created_at ASC');
-    res.json({ admins: rows });
+    // Get pending invitations too
+    const [invites] = await db.query('SELECT * FROM admin_invitations WHERE used = FALSE AND expires_at > NOW() ORDER BY created_at DESC');
+    res.json({ admins: rows, pending_invites: invites });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 };
 
-const addAdmin = async (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password) return res.status(400).json({ error: 'All fields required' });
+// Invite new admin — send email with registration link
+const inviteAdmin = async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+  if (!emailRegex.test(email)) return res.status(400).json({ error: 'Invalid email format. Must include @ and valid domain' });
   try {
+    // Check if already registered
     const [existing] = await db.query('SELECT id FROM admins WHERE email = ?', [email]);
-    if (existing.length > 0) return res.status(400).json({ error: 'Email already registered' });
+    if (existing.length > 0) return res.status(400).json({ error: 'This email is already registered as an admin' });
+
+    // Check if already invited
+    const [existingInvite] = await db.query('SELECT id FROM admin_invitations WHERE email = ? AND used = FALSE AND expires_at > NOW()', [email]);
+    if (existingInvite.length > 0) return res.status(400).json({ error: 'An invitation has already been sent to this email' });
+
+    // Generate invitation token
+    const token = jwt.sign({ email, type: 'admin_invite' }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    await db.query(
+      'INSERT INTO admin_invitations (email, token, expires_at) VALUES (?, ?, ?)',
+      [email, token, expiresAt]
+    );
+
+    // Send invite email
+    const inviteLink = `${process.env.CLIENT_URL}/admin/register?token=${token}`;
+    try {
+      await sendInviteEmail(email, inviteLink);
+    } catch (emailErr) {
+      console.error('Invite email failed:', emailErr.message);
+      // Still save invitation even if email fails
+    }
+
+    await logActivity(req.admin.id, 'Sent admin invitation', `Invited: ${email}`);
+    res.json({ message: 'Invitation sent to ' + email });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+};
+
+// Verify invitation token and complete registration
+const completeRegistration = async (req, res) => {
+  const { token, name, password } = req.body;
+  if (!token || !name || !password) return res.status(400).json({ error: 'All fields required' });
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  try {
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.type !== 'admin_invite') return res.status(400).json({ error: 'Invalid invitation token' });
+
+    // Check invitation in DB
+    const [invites] = await db.query(
+      'SELECT * FROM admin_invitations WHERE token = ? AND used = FALSE AND expires_at > NOW()',
+      [token]
+    );
+    if (invites.length === 0) return res.status(400).json({ error: 'Invitation has expired or already been used' });
+
+    const email = invites[0].email;
+
+    // Check if already registered
+    const [existing] = await db.query('SELECT id FROM admins WHERE email = ?', [email]);
+    if (existing.length > 0) return res.status(400).json({ error: 'This email is already registered' });
+
+    // Create admin account
     const password_hash = await bcrypt.hash(password, 10);
-    const [result] = await db.query(
+    await db.query(
       'INSERT INTO admins (name, email, password_hash, role) VALUES (?, ?, ?, ?)',
       [name, email, password_hash, 'admin']
     );
-    await logActivity(req.admin.id, 'Added new admin', `Added admin: ${email}`);
-    res.status(201).json({ message: 'Admin added', id: result.insertId });
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+
+    // Mark invitation as used
+    await db.query('UPDATE admin_invitations SET used = TRUE WHERE token = ?', [token]);
+
+    res.json({ message: 'Account created successfully! You can now login.' });
+  } catch (err) {
+    if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+      return res.status(400).json({ error: 'Invalid or expired invitation link' });
+    }
+    console.error(err); res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Verify token (check if valid before showing form)
+const verifyInviteToken = async (req, res) => {
+  const { token } = req.params;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.type !== 'admin_invite') return res.status(400).json({ error: 'Invalid token' });
+    const [invites] = await db.query(
+      'SELECT * FROM admin_invitations WHERE token = ? AND used = FALSE AND expires_at > NOW()',
+      [token]
+    );
+    if (invites.length === 0) return res.status(400).json({ error: 'Invitation expired or already used' });
+    res.json({ email: invites[0].email, valid: true });
+  } catch (err) {
+    res.status(400).json({ error: 'Invalid or expired invitation link' });
+  }
 };
 
 const deleteAdmin = async (req, res) => {
@@ -116,13 +197,14 @@ const deleteAdmin = async (req, res) => {
   try {
     const [rows] = await db.query('SELECT name, email FROM admins WHERE id = ?', [req.params.id]);
     await db.query('DELETE FROM admins WHERE id = ?', [req.params.id]);
-    await logActivity(req.admin.id, 'Deleted admin', `Deleted admin: ${rows[0]?.email}`);
+    await logActivity(req.admin.id, 'Deleted admin', `Deleted: ${rows[0]?.email}`);
     res.json({ message: 'Admin deleted' });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 };
 
 const updateProfile = async (req, res) => {
   const { name, email } = req.body;
+  if (!emailRegex.test(email)) return res.status(400).json({ error: 'Invalid email format' });
   try {
     await db.query('UPDATE admins SET name=?, email=? WHERE id=?', [name, email, req.admin.id]);
     await logActivity(req.admin.id, 'Updated profile');
@@ -145,4 +227,4 @@ const changePassword = async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 };
 
-module.exports = { getPlayers, downloadCSV, getAnalytics, getAllAdmins, addAdmin, deleteAdmin, updateProfile, changePassword };
+module.exports = { getPlayers, downloadCSV, getAnalytics, getAllAdmins, inviteAdmin, completeRegistration, verifyInviteToken, deleteAdmin, updateProfile, changePassword };

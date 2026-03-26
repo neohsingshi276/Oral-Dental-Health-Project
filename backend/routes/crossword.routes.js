@@ -3,7 +3,7 @@ const router = express.Router();
 const { getCrossword, getAllWords, addWord, updateWord, deleteWord, submitScore, getLeaderboard } = require('../controllers/crossword.controller');
 const verifyToken = require('../middleware/verifyToken');
 
-router.get('/', getCrossword);
+router.get('/:session_id', getCrossword);
 router.post('/submit', submitScore);
 router.get('/leaderboard/:session_id', getLeaderboard);
 router.get('/admin', verifyToken, getAllWords);

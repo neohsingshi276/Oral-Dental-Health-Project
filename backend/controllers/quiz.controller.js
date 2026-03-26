@@ -8,27 +8,60 @@ const getSessionQuestions = async (req, res) => {
   try {
     const [settings] = await db.query(
       'SELECT * FROM quiz_settings WHERE session_id = ?', [session_id]
-    );
-    const cfg = settings[0] || { timer_seconds: 15, question_order: 'shuffle', question_count: 10 };
+    ); // Fetch the custom settings we saved during session creation!
 
+    // Default config if none set
+    const cfg = settings[0] || { timer_seconds: 15, question_order: 'shuffle', question_count: 10, minimum_correct: 0, selected_questions: null };
+
+    // Start building query
     let query = 'SELECT id, question, question_type, image_url, options, correct_answer FROM quiz_questions';
-    if (cfg.question_order === 'shuffle') query += ' ORDER BY RAND()';
-    else query += ' ORDER BY id ASC';
-    query += ` LIMIT ${parseInt(cfg.question_count)}`;
+    let queryParams = [];
 
-    const [rows] = await db.query(query);
+    // Parse the selected specific questions (if the admin picked them)
+    let selectedIds = [];
+    try {
+      if (cfg.selected_questions) {
+        selectedIds = typeof cfg.selected_questions === 'string' ? JSON.parse(cfg.selected_questions) : cfg.selected_questions;
+      }
+    } catch (e) { }
+
+    // If the admin picked specific questions, we only fetch those IDs!
+    if (selectedIds && selectedIds.length > 0) {
+      const placeholders = selectedIds.map(() => '?').join(',');
+      query += ` WHERE id IN (${placeholders})`;
+      queryParams.push(...selectedIds);
+    }
+
+    if (cfg.question_order === 'shuffle') {
+      query += ' ORDER BY RAND()';
+    } else if (selectedIds && selectedIds.length > 0) {
+      // Maintain the order the admin selected them in
+      const fieldPlaceholders = selectedIds.map(() => '?').join(',');
+      query += ` ORDER BY FIELD(id, ${fieldPlaceholders})`;
+      queryParams.push(...selectedIds);
+    } else {
+      query += ' ORDER BY id ASC'; // Fallback
+    }
+
+    query += ' LIMIT ?';
+    queryParams.push(parseInt(cfg.question_count));
+
+    const [rows] = await db.query(query, queryParams);
     const questions = rows.map(q => ({
       ...q,
       options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options,
       correct_answer: typeof q.correct_answer === 'string' ? JSON.parse(q.correct_answer) : q.correct_answer,
       timer_seconds: cfg.timer_seconds,
     }));
-    res.json({ questions, settings: cfg });
+
+    // We send back minimum_correct as well so the frontend knows the passing score
+    res.json({ questions, settings: { ...cfg, selected_questions: selectedIds } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 };
+
 
 // ── Player: submit quiz answers ───────────────────────────────────────────────
 const submitQuiz = async (req, res) => {

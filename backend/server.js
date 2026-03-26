@@ -38,7 +38,6 @@ app.use('/api/email', require('./routes/email.routes'));
 app.use('/api/quiz', require('./routes/quiz.routes'));
 app.use('/api/crossword', require('./routes/crossword.routes'));
 app.use('/api/cp3', require('./routes/cp3.routes'));
-app.use('/api/email', require('./routes/email.routes'));
 app.use('/api/activity', require('./routes/activity.routes'));
 // Serve uploaded images
 app.use('/uploads', express.static('uploads'));

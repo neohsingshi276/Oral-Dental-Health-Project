@@ -103,19 +103,46 @@ function generateCrosswordLayout(wordsData) {
 
 const getCrossword = async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT * FROM crossword_data ORDER BY id');
+    const { session_id } = req.params;
 
-    // Shuffle and pick 8 words randomly (like friend's code)
+    // Fetch custom settings for this session
+    const [settingsRows] = await db.query('SELECT * FROM crossword_settings WHERE session_id = ?', [session_id]);
+    const cfg = settingsRows[0] || { word_count: 8, selected_words: null };
+
+    // Start building query
+    let query = 'SELECT * FROM crossword_data';
+    let queryParams = [];
+
+    // Parse the selected specific words
+    let selectedIds = [];
+    try {
+      if (cfg.selected_words) {
+        selectedIds = typeof cfg.selected_words === 'string' ? JSON.parse(cfg.selected_words) : cfg.selected_words;
+      }
+    } catch (e) { }
+
+    // Only get the specific words the admin selected!
+    if (selectedIds && selectedIds.length > 0) {
+      const placeholders = selectedIds.map(() => '?').join(',');
+      query += ` WHERE id IN (${placeholders})`;
+      queryParams.push(...selectedIds);
+    }
+
+    const [rows] = await db.query(query, queryParams);
+
+    // Shuffle and pick the requested number of words
     const shuffled = rows.sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, Math.min(shuffled.length, 8));
+    const selected = shuffled.slice(0, Math.min(shuffled.length, cfg.word_count || 8));
 
     const layout = generateCrosswordLayout(selected);
-    res.json(layout);
+    // Return settings alongside layout so frontend can use them
+    res.json({ ...layout, settings: cfg });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 };
+
 
 // ============================================
 // SUBMIT CROSSWORD SCORE

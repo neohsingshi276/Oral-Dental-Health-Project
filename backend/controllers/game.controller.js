@@ -23,7 +23,7 @@ const joinGame = async (req, res) => {
     // Create initial position
     await db.query(
       'INSERT INTO player_positions (player_id, pos_x, pos_y, last_checkpoint) VALUES (?, ?, ?, ?)',
-      [playerId, 206, 520, 0]
+      [playerId, 390, 1000, 0]
     );
 
     // Create checkpoint attempt records

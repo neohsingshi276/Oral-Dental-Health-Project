@@ -1,5 +1,14 @@
 const db = require('../db');
 
+const getSettings = async (req, res) => {
+  try {
+    const { session_id } = req.params;
+    const [rows] = await db.query('SELECT * FROM cp3_settings WHERE session_id = ?', [session_id]);
+    res.json({ settings: rows[0] || { timer_seconds: 60, target_score: 0 } });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+};
+
+
 const saveScore = async (req, res) => {
   const { player_id, session_id, score } = req.body;
   try {
@@ -122,4 +131,4 @@ const getFinalLeaderboard = async (req, res) => {
   }
 };
 
-module.exports = { saveScore, getLeaderboard, getCrosswordLeaderboard, getFinalLeaderboard };
+module.exports = { saveScore, getLeaderboard, getCrosswordLeaderboard, getFinalLeaderboard, getSettings };
